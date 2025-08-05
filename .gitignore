@@ -213,3 +213,16 @@ haul.ipynb
 visualize_detection_performance.py
 create_annotation_video.py
 
+
+# IDE + output
+.idea/
+plot/
+
+
+# macOS cruft
+*.DS_Store
+
+# IDE + output
+.idea/
+plot/
+

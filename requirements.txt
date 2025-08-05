@@ -1,0 +1,9 @@
+# requirements.txt
+
+numpy
+pandas
+scipy
+opencv-python
+matplotlib
+ultralytics
+tqdm
