@@ -116,7 +116,7 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 
 4. **Frame-skip versus accuracy trade-off**  
    A ten-minute clip at 30 fps contains 18 000 frames; inferring on every frame is cost-prohibitive.  
-   Experiments show that a **frame-skip of 4–5** — sampling roughly 20 – 25 % of frames — still achieves **100 % recall** across 48 validation videos.  
+   Experiments show that a **frame‑skip of 4–5** — sampling roughly 20–25 % of frames — still achieves **100 % accuracy** across 48 validation videos.  
    ![Accuracy vs cost](diagram/fixed_accuracy_vs_inference_cost_recommended_skip.png)
 
 5. **Dynamic frame-skip strategy (DNFS)**  
