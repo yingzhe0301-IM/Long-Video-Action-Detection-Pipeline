@@ -205,3 +205,11 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# project-specific ignores
+history_data/
+test_video/
+haul.ipynb
+visualize_detection_performance.py
+create_annotation_video.py
+
