@@ -226,3 +226,7 @@ plot/
 .idea/
 plot/
 
+
+.idea/
+plot/
+*.DS_Store
