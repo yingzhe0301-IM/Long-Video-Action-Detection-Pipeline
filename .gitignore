@@ -230,3 +230,7 @@ plot/
 .idea/
 plot/
 *.DS_Store
+
+.idea/
+plot/
+*.DS_Store
