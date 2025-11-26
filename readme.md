@@ -43,9 +43,9 @@ The demo walks through the full flow:
 **Included folders**
 
 ```
-model_weights/           # Pretrained weights (e.g., pumping.pt)
-selected_test_video/     # Demo clips grouped by action type
-plot/                    # Output directory for detection plots
+model_weights/               # Pretrained weights (e.g., haul.pt, pumping.pt)
+video/selected_test_video/   # Demo clips grouped by action type (not uploaded)
+plot/                        # Output directory for detection plots (generated locally)
 ```
 
 ---
@@ -68,16 +68,15 @@ If you prefer a manual install, open the script and execute the commands step‑
 
 ---
 
-## ⚡️ Run a Pumping Detection Demo
+## ⚡️ Run a Haul Detection Demo
 
 ```bash
-python fixed_experiments.py \
-  --single \
-  --action_type pumping \
-  --frame_skip 4 \
-  --video_root selected_test_video \
-  --model_weight model_weights/pumping.pt
+%run experiments.py --action_type 'haul' --single --frame_skip 8 \
+  --model_weight 'model_weights/haul.pt' \
+  --video_root 'video/selected_test_video'
 ```
+
+> Note: demo videos are not committed for confidentiality. Place your own clips under `video/selected_test_video/<action>/`.
 
 This command will:
 
