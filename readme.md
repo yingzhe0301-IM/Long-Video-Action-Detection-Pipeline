@@ -31,15 +31,14 @@ The demo walks through the full flow:
 
 ## 📚 Required Scripts
 
-- `fixed_experiments.py` — main entry point for single‑action demo  
-- `config.py` — global paths & environment settings  
-- `experiment_config.py` — action‑specific hyper‑parameters  
-- `common_experiments.py` — shared experiment helpers  
-- `batch_utils.py` — batch‑construction utilities  
-- `detection_utils.py` — post‑processing & metric computation  
-- `video_batch_processor_unified.py` — unified batch inference engine  
-- `video_processor_async.py` — asynchronous frame loader  
-- `action_detection.py` — low‑level detection wrapper  
+- `experiments.py` — CLI entry point that wires models, batching, and evaluation  
+- `haul/config/experiment_config.py` — dataclass describing experiment arguments  
+- `haul/config/unified_config.py` — action defaults and scaling helpers  
+- `haul/detection/detection_utils.py` — device helpers and YOLO model loading  
+- `haul/detection/signal_processing_utils.py` — shared signal-processing primitives  
+- `haul/actions/action_registry.py` — routes detections through action-specific logic  
+- `haul/processing/batch_processor_simplified.py` — batches videos and plots results  
+- `haul/processing/video_processor_unified.py` — runs YOLO over frame batches  
 
 **Included folders**
 
@@ -96,10 +95,8 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 ## 🧪 R&D Process & Key Experiments
 
 1. **Visual primitives & raw detections**  
-   Accurately recognising a high-level action in a long video first requires detecting the *visual primitives* that uniquely characterise that action — for example, a **fish-net**, deck personnel, or the fish themselves.  
+   Accurately recognising a high-level action in a long video first requires detecting the *visual primitives* that uniquely characterise that action — for example, the hauling gear, deck personnel, or the catch itself.  
    *Illustration* ↓
-
-   ![Sparse fish-net detection](diagram/sparse_fishnet.jpg)
 
 2. **Formulating an action-representative signal**  
    Our signal design was guided by two principles:  
@@ -110,7 +107,7 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
    ![Signal candidates](diagram/action_representative_signal.png)
 
 3. **Temporal reasoning via post-detection analysis**  
-   To recover the *duration* of an action such as fishing, we detect local maxima in the signal that correspond to the **net cast** and **net retrieval** events.  
+   To recover the *duration* of a hauling action, we detect local maxima in the signal that correspond to the key motion peaks.  
    Each odd-even peak pair brackets a single action interval; peak prominence and minimum-distance thresholds are carefully tuned (see below).  
    ![Peak detection](diagram/signal_detection.png)
 

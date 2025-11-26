@@ -7,3 +7,4 @@ opencv-python
 matplotlib
 ultralytics
 tqdm
+torch
