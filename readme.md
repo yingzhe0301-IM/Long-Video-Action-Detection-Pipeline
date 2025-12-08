@@ -43,7 +43,7 @@ The demo walks through the full flow:
 **Included folders**
 
 ```
-model_weights/               # Pretrained weights (e.g., haul.pt, pumping.pt)
+model_weights/               # Pretrained weights (haul.pt)
 video/selected_test_video/   # Demo clips grouped by action type (not uploaded)
 plot/                        # Output directory for detection plots (generated locally)
 ```
