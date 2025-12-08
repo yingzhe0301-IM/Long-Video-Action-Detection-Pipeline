@@ -224,6 +224,9 @@ video/*
 video/selected_test_video/*
 !video/selected_test_video/.gitkeep
 !video/selected_test_video/README.md
+!video/selected_test_video/haul/
+video/selected_test_video/haul/*
+!video/selected_test_video/haul/isafold_20240627_0102.mp4
 
 haul.ipynb
 visualize_detection_performance.py
