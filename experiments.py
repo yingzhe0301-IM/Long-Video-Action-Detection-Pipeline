@@ -6,13 +6,13 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from haul.detection.detection_utils import get_device, load_yolo_model
+from haul.detection.detection_utils import clear_memory, get_device, load_yolo_model
 from haul.config.experiment_config import DEFAULT_EXPERIMENT_OPTIONS, ExperimentConfig
 from haul.config.unified_config import default_detection_mode
-from haul.processing.batch_processor_simplified import process_all_videos, process_single_video
+from haul.processing.batch_processor import process_all_videos, process_single_video
 
 
-def run_single_experiment(config: ExperimentConfig, video_file: Optional[str] = None) -> float:
+def run_single_experiment(config: ExperimentConfig, video_file: Optional[str] = None) -> Optional[float]:
     print(f"\n{'=' * 50}")
     print(f"Action Type: {config.action_type}")
     print(f"Detection Mode: {config.detection_mode}")
@@ -47,10 +47,10 @@ def run_single_experiment(config: ExperimentConfig, video_file: Optional[str] = 
             return 100.0 if evaluation.get("success") else 0.0
         return 0.0
 
-    return process_all_videos(config)
+    return float(process_all_videos(config))
 
 
-def run_frame_skip_scan(config: ExperimentConfig, skip_values: List[int]) -> None:
+def run_scan_experiment(config: ExperimentConfig, skip_values: List[int]) -> None:
     print(f"\n{'=' * 50}")
     print(f"FRAME SKIP SCAN: {config.action_type}")
     print(f"Skip Values: {skip_values}")
@@ -65,16 +65,27 @@ def run_frame_skip_scan(config: ExperimentConfig, skip_values: List[int]) -> Non
         print(f"\n[{idx}/{len(skip_values)}] Testing frame_skip = {skip}")
         config.frame_skip = skip
         start = time.time()
-        accuracy = process_all_videos(config, model=model)
+        stats = process_all_videos(config, model=model, return_details=True)
         runtime = time.time() - start
-        results.append({"frame_skip": skip, "accuracy": accuracy, "runtime": runtime})
+        results.append({
+            "frame_skip": skip,
+            "accuracy": stats.get("accuracy", 0.0),
+            "success_count": stats.get("success_count", 0),
+            "total_videos": stats.get("total_videos", 0),
+            "runtime": runtime,
+            "use_prefetch": config.use_prefetch,
+        })
+        clear_memory(config.device)
 
     # Summary
     print(f"\n{'=' * 50}\nSCAN RESULTS\n{'=' * 50}")
-    print(f"{'Skip':<10} {'Accuracy':<15} {'Runtime':<10}")
+    print(f"{'Skip':<10}{'Videos':<12}{'Accuracy':<12}{'Runtime':<12}")
     best = max(results, key=lambda x: x["accuracy"])
     for r in results:
-        print(f"{r['frame_skip']:<10} {r['accuracy']:<15.2f}% {r['runtime']:<10.2f}s")
+        accuracy_str = f"{r['accuracy']:.2f}%"
+        runtime_str = f"{r['runtime']:.2f}s"
+        videos_str = f"{r.get('success_count', 0)}/{r.get('total_videos', 0)}"
+        print(f"{r['frame_skip']:<10}{videos_str:<12}{accuracy_str:<12}{runtime_str:<12}")
     print(f"\nBest: frame_skip={best['frame_skip']} ({best['accuracy']:.2f}%)")
     print(f"Total time: {time.time() - total_start:.2f}s")
 
@@ -82,10 +93,11 @@ def run_frame_skip_scan(config: ExperimentConfig, skip_values: List[int]) -> Non
         import pandas as pd
         results_dir = Path(config.plot_folder) / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame(results).to_csv(results_dir / f"{config.action_type}_scan.csv", index=False)
+        ordered_cols = ["frame_skip", "success_count", "total_videos", "accuracy", "runtime", "use_prefetch"]
+        pd.DataFrame(results)[ordered_cols].to_csv(results_dir / f"{config.action_type}_scan.csv", index=False)
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run action detection experiments")
     parser.add_argument("--action_type", type=str, required=True,
                         choices=["pumping", "haul", "setting", "catch"])
@@ -111,20 +123,24 @@ def main() -> None:
     parser.add_argument("--video", type=str)
     parser.add_argument("--no-prefetch", action="store_true", help="Disable async prefetching")
     parser.add_argument("--prefetch_batches", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["prefetch_batches"])
+    return parser.parse_args()
 
-    args = parser.parse_args()
 
+def build_config(args: argparse.Namespace) -> ExperimentConfig:
     if args.video and not args.single:
-        parser.error("--video requires --single")
+        raise SystemExit("--video requires --single")
 
-    # Resolve model weight
-    model_weight = args.model_weight or ("yolov8n.pt" if args.action_type == "setting" else "best.pt")
-    if "yolo" not in model_weight and not Path(model_weight).exists():
+    # Resolve model weight: prefer explicit path, then action-specific weight under model_weights/, otherwise best.pt
+    model_weight = args.model_weight
+    if not model_weight:
+        candidate = Path("model_weights") / f"{args.action_type}.pt"
+        model_weight = str(candidate) if candidate.exists() else "best.pt"
+    elif not Path(model_weight).exists():
         candidate = Path("model_weights") / model_weight
         if candidate.exists():
             model_weight = str(candidate)
 
-    config = ExperimentConfig(
+    return ExperimentConfig(
         action_type=args.action_type,
         detection_mode=args.detection_mode or default_detection_mode(args.action_type),
         video_root=args.video_root,
@@ -142,12 +158,17 @@ def main() -> None:
         device=get_device(),
     )
 
+
+def main() -> None:
+    args = parse_args()
+    config = build_config(args)
+
     if args.single:
         run_single_experiment(config, args.video)
     else:
         skips = [int(x) for x in args.custom_skips.split(",")] if args.custom_skips else list(
             range(args.min_skip, args.max_skip + 1))
-        run_frame_skip_scan(config, skips)
+        run_scan_experiment(config, skips)
 
     print("\nExperiment completed!")
 

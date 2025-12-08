@@ -37,8 +37,8 @@ The demo walks through the full flow:
 - `haul/detection/detection_utils.py` — device helpers and YOLO model loading  
 - `haul/detection/signal_processing_utils.py` — shared signal-processing primitives  
 - `haul/actions/action_registry.py` — routes detections through action-specific logic  
-- `haul/processing/batch_processor_simplified.py` — batches videos and plots results  
-- `haul/processing/video_processor_unified.py` — runs YOLO over frame batches  
+- `haul/processing/batch_processor.py` — batches videos and plots results  
+- `haul/processing/video_processor.py` — runs YOLO over frame batches  
 
 **Included folders**
 
@@ -126,10 +126,10 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 
 ## 💡 Technical Highlights
 
-- **High‑throughput frame loader** — `video_processor_async.py` uses *asyncio* + prefetch queues to maximise GPU utilisation.  
-- **Unified batch inference** — `video_batch_processor_unified.py` auto‑adjusts batch size for your GPU.  
+- **High‑throughput frame loader** — `haul/processing/video_processor.py` prefetches frames on a background thread to maximise GPU utilisation.  
+- **Unified batch inference** — `haul/processing/batch_processor.py` orchestrates detection and evaluation across clips.  
 - **Action signal & post‑detection** — per‑frame counts feed peak/interval detectors to pinpoint events.  
 - **False‑positive reduction** — action‑specific thresholds and signal smoothing eliminate spurious detections.  
-- **Modular configuration** — tweak everything in `config.py` & `experiment_config.py`.  
+- **Modular configuration** — tweak everything in `haul/config/unified_config.py` and `haul/config/experiment_config.py`.  
 
 ---

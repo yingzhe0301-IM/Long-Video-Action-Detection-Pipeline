@@ -1,9 +1,11 @@
 # detection_utils.py - Simplified version
 
-import torch
-import numpy as np
-from ultralytics import YOLO
+import gc
 from typing import List, Tuple, Optional, Union
+
+import numpy as np
+import torch
+from ultralytics import YOLO
 
 
 def get_device() -> torch.device:
@@ -29,6 +31,16 @@ def supports_half_precision(device: Optional[torch.device] = None) -> bool:
     if device is not None:
         return device.type == "cuda"
     return torch.cuda.is_available()
+
+
+def clear_memory(device: Optional[torch.device]) -> None:
+    """Release Python and torch caches between runs to curb RAM growth."""
+    gc.collect()
+    if device:
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
+        elif device.type == "mps":
+            torch.mps.empty_cache()
 
 
 def slide_window_average(data: List[Union[int, float]], window_size: int) -> Tuple[List[float], List[float]]:

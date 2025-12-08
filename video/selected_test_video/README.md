@@ -1,0 +1,1 @@
+Demo clips live here. The repository excludes raw videos by default (use Git LFS if you need to track them). Keep only small, shareable samples in this folder and avoid committing other video sets under `video/`.

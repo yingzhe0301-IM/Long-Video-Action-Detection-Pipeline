@@ -213,9 +213,18 @@ __marimo__/
 # project-specific ignores
 history_data/*
 !history_data/.gitkeep
-test_video/
-video/
-selected_test_video/
+
+# Model weights (keep only haul.pt in git)
+model_weights/*
+!model_weights/haul.pt
+
+# Videos (keep only placeholders under selected_test_video)
+video/*
+!video/selected_test_video/
+video/selected_test_video/*
+!video/selected_test_video/.gitkeep
+!video/selected_test_video/README.md
+
 haul.ipynb
 visualize_detection_performance.py
 create_annotation_video.py

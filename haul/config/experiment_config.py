@@ -42,7 +42,7 @@ DEFAULT_EXPERIMENT_OPTIONS = {
     "frame_skip": 5,
     "min_skip": 1,
     "max_skip": 64,
-    "video_root": "selected_test_video",
+    "video_root": "video/selected_test_video",
     "plot_folder": "plot",
     "confidence": 0.5,
     "batch_size": 64,
