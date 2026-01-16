@@ -1,15 +1,19 @@
-"""Batch processing helpers for action detection experiments."""
+"""Batch orchestration helpers for action detection experiments."""
 
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from ..actions.action_evaluator import calculate_accuracy
-from ..actions.action_registry import process_action
-from ..config.experiment_config import ExperimentConfig
-from ..detection.detection_utils import get_device, load_yolo_model
-from .utils import get_video_files, plot_results
-from .video_processor import process_video
+from .config.experiment_config import ExperimentConfig
+from .inference.inference_utils import get_device, load_yolo_model
+from .inference.video_inference import process_video
+from .post_inference.plotting import plot_results
+from .post_inference.post_inference import analyze_detection_data, calculate_accuracy
+
+
+def get_video_files(video_root: Path) -> List[Path]:
+    """Return sorted list of .mp4 files under the given root."""
+    return sorted(video_root.rglob("*.mp4"))
 
 
 def run_detection(video_path: Path, config: ExperimentConfig, model: Optional[Any] = None) -> Dict[str, Any]:
@@ -41,7 +45,7 @@ def run_detection(video_path: Path, config: ExperimentConfig, model: Optional[An
 
 def analyze_actions(detection_data: Dict[str, Any], config: ExperimentConfig) -> Dict[str, Any]:
     """Analyze detection data to identify actions."""
-    result = process_action(config.action_type, detection_data, config.to_action_config())
+    result = analyze_detection_data(config.action_type, detection_data, config)
     result["video_name"] = detection_data["video_name"]
     result["video_stem"] = detection_data["video_stem"]
 

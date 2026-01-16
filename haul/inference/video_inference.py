@@ -1,4 +1,4 @@
-"""Video processing with optional async frame prefetching."""
+"""Video inference with optional async frame prefetching."""
 
 import os
 from pathlib import Path
@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import cv2
 import torch
 
-from haul.detection.detection_utils import supports_half_precision
+from .inference_utils import supports_half_precision
 
 
 def _decode_frames(video_path: str, frame_skip: int, batch_size: int, queue: Queue, stop: Event) -> None:

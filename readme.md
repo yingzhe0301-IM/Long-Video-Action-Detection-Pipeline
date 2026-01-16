@@ -10,7 +10,7 @@ The demo walks through the full flow:
 1. Batched, asynchronous frame loading  
 2. YOLO‑based inference on MPS or CUDA  
 3. Aggregating detections into an **action‑representative signal**  
-4. Executing custom post‑detection algorithms (peak or interval detection)  
+4. Executing custom post‑detection algorithms (peak detection)  
 5. Plotting & exporting results for quick inspection 
 
 ![Pipeline workflow](diagram/workflow.png)
@@ -32,13 +32,14 @@ The demo walks through the full flow:
 ## 📚 Required Scripts
 
 - `experiments.py` — CLI entry point that wires models, batching, and evaluation  
-- `haul/config/experiment_config.py` — dataclass describing experiment arguments  
-- `haul/config/unified_config.py` — action defaults and scaling helpers  
-- `haul/detection/detection_utils.py` — device helpers and YOLO model loading  
-- `haul/detection/signal_processing_utils.py` — shared signal-processing primitives  
-- `haul/actions/action_registry.py` — routes detections through action-specific logic  
-- `haul/processing/batch_processor.py` — batches videos and plots results  
-- `haul/processing/video_processor.py` — runs YOLO over frame batches  
+- `haul/config/experiment_config.py` — experiment defaults and dataclass  
+- `haul/config/unified_config.py` — peak detection parameters and scaling  
+- `haul/inference/inference_utils.py` — device helpers and YOLO model loading  
+- `haul/inference/video_inference.py` — runs YOLO over frame batches  
+- `haul/post_inference/peak_detection.py` — peak-only detection algorithms  
+- `haul/post_inference/post_inference.py` — signal construction and evaluation  
+- `haul/post_inference/plotting.py` — plotting helpers for timelines  
+- `haul/batch_runner.py` — batches videos and plots results  
 
 **Included folders**
 
@@ -82,8 +83,8 @@ This command will:
 
 1. **Load** frames asynchronously in batches  
 2. **Infer** detections with YOLO  
-3. **Compute** an action‑representative signal (detections / frame)  
-4. **Apply** post‑detection algorithms (peak or interval detection)  
+3. **Compute** an action‑representative signal (binary detections per frame)  
+4. **Apply** post‑detection algorithms (peak detection)  
 5. **Save** plots & CSV to `plot/latest/`  
 6. **Done!** Review results in the output folder  
 
@@ -94,7 +95,7 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 ## 🧪 R&D Process & Key Experiments
 
 1. **Visual primitives & raw detections**  
-   Accurately recognising a high-level action in a long video first requires detecting the *visual primitives* that uniquely characterise that action — for example, the hauling gear, deck personnel, or the catch itself.  
+   Accurately recognising a high-level action in a long video first requires detecting the *visual primitives* that uniquely characterise that action — for example, the hauling gear, deck personnel, or other visual cues.  
    *Illustration* ↓
 
 2. **Formulating an action-representative signal**  
@@ -107,7 +108,7 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 
 3. **Temporal reasoning via post-detection analysis**  
    To recover the *duration* of a hauling action, we detect local maxima in the signal that correspond to the key motion peaks.  
-   Each odd-even peak pair brackets a single action interval; peak prominence and minimum-distance thresholds are carefully tuned (see below).  
+   Peak clustering consolidates local maxima into action events; prominence and minimum-distance thresholds are carefully tuned (see below).  
    ![Peak detection](diagram/signal_detection.png)
 
 4. **Frame-skip versus accuracy trade-off**  
@@ -126,10 +127,14 @@ After the run, open **`plot/latest/`** to view detection timelines, signals, and
 
 ## 💡 Technical Highlights
 
-- **High‑throughput frame loader** — `haul/processing/video_processor.py` prefetches frames on a background thread to maximise GPU utilisation.  
-- **Unified batch inference** — `haul/processing/batch_processor.py` orchestrates detection and evaluation across clips.  
-- **Action signal & post‑detection** — per‑frame counts feed peak/interval detectors to pinpoint events.  
+- **High‑throughput frame loader** — `haul/inference/video_inference.py` prefetches frames on a background thread to maximise GPU utilisation.  
+- **Unified batch inference** — `haul/batch_runner.py` orchestrates detection and evaluation across clips.  
+- **Action signal & post‑detection** — per‑frame counts feed peak detectors to pinpoint events.  
 - **False‑positive reduction** — action‑specific thresholds and signal smoothing eliminate spurious detections.  
 - **Modular configuration** — tweak everything in `haul/config/unified_config.py` and `haul/config/experiment_config.py`.  
 
 ---
+
+## 🧾 Experiment Notes
+
+- `frame_skip=1` on the current peak-only pipeline: 100% accuracy, 7816.15s runtime; no further runs planned for this skip. 

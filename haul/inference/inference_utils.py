@@ -1,9 +1,8 @@
-# detection_utils.py - Simplified version
+"""Helpers for device selection and model loading during inference."""
 
 import gc
-from typing import List, Tuple, Optional, Union
+from typing import Optional
 
-import numpy as np
 import torch
 from ultralytics import YOLO
 
@@ -42,16 +41,3 @@ def clear_memory(device: Optional[torch.device]) -> None:
         elif device.type == "mps":
             torch.mps.empty_cache()
 
-
-def slide_window_average(data: List[Union[int, float]], window_size: int) -> Tuple[List[float], List[float]]:
-    """Apply sliding window average to data"""
-    n = len(data)
-    if n < window_size:
-        return [], []
-
-    data_arr = np.asarray(data, dtype=float)
-    kernel = np.full(window_size, 1.0 / window_size, dtype=float)
-    averages = np.convolve(data_arr, kernel, mode="valid")
-    centers = np.arange(window_size // 2, window_size // 2 + averages.size, dtype=float)
-
-    return centers.tolist(), averages.tolist()

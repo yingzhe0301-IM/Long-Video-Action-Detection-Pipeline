@@ -6,10 +6,9 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from haul.detection.detection_utils import clear_memory, get_device, load_yolo_model
-from haul.config.experiment_config import DEFAULT_EXPERIMENT_OPTIONS, ExperimentConfig
-from haul.config.unified_config import default_detection_mode
-from haul.processing.batch_processor import process_all_videos, process_single_video
+from haul.inference.inference_utils import clear_memory, get_device, load_yolo_model
+from haul.config.experiment_config import DEFAULT_DETECTION_MODE, DEFAULT_EXPERIMENT_OPTIONS, ExperimentConfig
+from haul.batch_runner import process_all_videos, process_single_video
 
 
 def run_single_experiment(config: ExperimentConfig, video_file: Optional[str] = None) -> Optional[float]:
@@ -100,13 +99,13 @@ def run_scan_experiment(config: ExperimentConfig, skip_values: List[int]) -> Non
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run action detection experiments")
     parser.add_argument("--action_type", type=str, required=True,
-                        choices=["pumping", "haul", "setting", "catch"])
+                        choices=["haul"])
 
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--single", action="store_true")
     mode.add_argument("--scan", action="store_true")
 
-    parser.add_argument("--detection_mode", type=str, choices=["interval", "peak"])
+    parser.add_argument("--detection_mode", type=str, choices=["peak"])
     parser.add_argument("--frame_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["frame_skip"])
     parser.add_argument("--min_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["min_skip"])
     parser.add_argument("--max_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["max_skip"])
@@ -117,7 +116,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--confidence", type=float, default=DEFAULT_EXPERIMENT_OPTIONS["confidence"])
     parser.add_argument("--batch_size", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["batch_size"])
     parser.add_argument("--window_size", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["window_size"])
-    parser.add_argument("--max_interval_gap", type=int)
     parser.add_argument("--save_frames", action="store_true")
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--video", type=str)
@@ -142,7 +140,7 @@ def build_config(args: argparse.Namespace) -> ExperimentConfig:
 
     return ExperimentConfig(
         action_type=args.action_type,
-        detection_mode=args.detection_mode or default_detection_mode(args.action_type),
+        detection_mode=args.detection_mode or DEFAULT_DETECTION_MODE,
         video_root=args.video_root,
         plot_folder=args.plot_folder,
         model_weight=model_weight,
@@ -152,7 +150,6 @@ def build_config(args: argparse.Namespace) -> ExperimentConfig:
         save_frames=args.save_frames,
         display=args.display,
         frame_skip=args.frame_skip,
-        max_interval_gap=args.max_interval_gap,
         use_prefetch=not args.no_prefetch,
         prefetch_batches=args.prefetch_batches,
         device=get_device(),

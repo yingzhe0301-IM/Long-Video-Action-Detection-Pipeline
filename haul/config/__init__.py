@@ -1,21 +1,22 @@
 """Configuration helpers for experiments and detectors."""
 
-from .experiment_config import ExperimentConfig
-from .unified_config import (
-    BASE_DETECTION,
-    DEFAULT_ACTIONS,
+from .experiment_config import (
+    DEFAULT_ACTION_TYPE,
+    DEFAULT_DETECTION_MODE,
+    DEFAULT_EXPERIMENT_OPTIONS,
+    DEFAULT_MODEL_WEIGHT,
     DEFAULT_WINDOW_SIZE,
-    config_from_args,
-    default_detection_mode,
-    make_action_config,
+    ExperimentConfig,
 )
+from .unified_config import PEAK_DETECTION_PARAMS, scale_peak_params
 
 __all__ = [
-    "ExperimentConfig",
-    "BASE_DETECTION",
-    "DEFAULT_ACTIONS",
+    "DEFAULT_ACTION_TYPE",
+    "DEFAULT_DETECTION_MODE",
+    "DEFAULT_EXPERIMENT_OPTIONS",
+    "DEFAULT_MODEL_WEIGHT",
     "DEFAULT_WINDOW_SIZE",
-    "config_from_args",
-    "default_detection_mode",
-    "make_action_config",
+    "ExperimentConfig",
+    "PEAK_DETECTION_PARAMS",
+    "scale_peak_params",
 ]
