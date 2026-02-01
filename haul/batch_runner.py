@@ -2,11 +2,11 @@
 
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .config.experiment_config import ExperimentConfig
 from .inference.inference_utils import get_device, load_yolo_model
-from .inference.video_inference import process_video
+from .inference.video_inference import process_video, process_video_adaptive
 from .post_inference.plotting import plot_results
 from .post_inference.post_inference import analyze_detection_data, calculate_accuracy
 
@@ -16,13 +16,43 @@ def get_video_files(video_root: Path) -> List[Path]:
     return sorted(video_root.rglob("*.mp4"))
 
 
-def run_detection(video_path: Path, config: ExperimentConfig, model: Optional[Any] = None) -> Dict[str, Any]:
+def run_detection(
+    video_path: Path,
+    config: ExperimentConfig,
+    model: Optional[Any] = None,
+    prefetch_summary_collector: Optional[Callable[[Dict[str, float]], None]] = None,
+) -> Dict[str, Any]:
     """Run YOLO detection on a single video."""
     device = config.device or get_device()
     model = model or load_yolo_model(config.model_weight, device=device, confidence=config.confidence)
 
     output_dir = Path(config.plot_folder) / f"output_frames_{video_path.stem}"
 
+    # Check if adaptive mode is enabled
+    adaptive_cfg = config.adaptive_config
+    if adaptive_cfg and adaptive_cfg.enabled:
+        detections, total_frames = process_video_adaptive(
+            model, video_path, str(output_dir),
+            conf=config.confidence,
+            device=device,
+            display=config.display,
+            save_annotated_frames=config.save_frames,
+            initial_skip=adaptive_cfg.initial_skip,
+            consecutive_negative_threshold=adaptive_cfg.consecutive_negative_threshold,
+            max_skip=adaptive_cfg.max_skip,
+        )
+        # For adaptive mode, detection_attempts = number of sampled frames
+        detection_attempts = len(detections)
+        return {
+            "video_name": video_path.name,
+            "video_stem": video_path.stem,
+            "model_weight": config.model_weight,
+            "detections_per_frame": detections,
+            "total_frames": total_frames,
+            "detection_attempts": detection_attempts,
+        }
+
+    # Fixed frame skip mode
     detections = process_video(
         model, video_path, str(output_dir),
         batch_size=config.batch_size,
@@ -33,6 +63,10 @@ def run_detection(video_path: Path, config: ExperimentConfig, model: Optional[An
         save_annotated_frames=config.save_frames,
         prefetch_batches=config.prefetch_batches,
         use_async=config.use_prefetch,
+        decode_all=config.decode_all,
+        prefetch_summary_collector=prefetch_summary_collector,
+        prefetch_log_stdout=config.prefetch_log_stdout,
+        enable_profiler=config.enable_profiler,
     )
 
     return {
@@ -49,15 +83,26 @@ def analyze_actions(detection_data: Dict[str, Any], config: ExperimentConfig) ->
     result["video_name"] = detection_data["video_name"]
     result["video_stem"] = detection_data["video_stem"]
 
+    # Preserve adaptive mode stats for cost analysis
+    if "detection_attempts" in detection_data:
+        result["detection_attempts"] = detection_data["detection_attempts"]
+    if "total_frames" in detection_data:
+        result["total_frames"] = detection_data["total_frames"]
+
     if not result.get("skipped"):
         result["plot_path"] = plot_results(result, Path(config.plot_folder), config.model_weight, detection_data["video_name"])
 
     return result
 
 
-def process_single_video(video_path: Path, config: ExperimentConfig, model: Optional[Any] = None) -> Dict[str, Any]:
+def process_single_video(
+    video_path: Path,
+    config: ExperimentConfig,
+    model: Optional[Any] = None,
+    prefetch_summary_collector: Optional[Callable[[Dict[str, float]], None]] = None,
+) -> Dict[str, Any]:
     """Process a single video: detection + action analysis."""
-    detection_data = run_detection(video_path, config, model)
+    detection_data = run_detection(video_path, config, model, prefetch_summary_collector)
     return analyze_actions(detection_data, config)
 
 
@@ -65,6 +110,8 @@ def process_all_videos(
     config: ExperimentConfig,
     model: Optional[Any] = None,
     return_details: bool = False,
+    verbose: bool = True,
+    prefetch_summary_collector: Optional[Callable[[Dict[str, float]], None]] = None,
 ) -> Dict[str, float] | float:
     """Process all videos and return accuracy or full stats."""
     start_time = time.time()
@@ -81,28 +128,55 @@ def process_all_videos(
     model = model or load_yolo_model(config.model_weight, device=device, confidence=config.confidence)
 
     results = []
+    total_detection_attempts = 0
+    total_frames_all = 0
+    error_details = []
+
     for idx, video_path in enumerate(video_files, 1):
-        result = process_single_video(video_path, config, model)
+        result = process_single_video(video_path, config, model, prefetch_summary_collector)
         results.append(result)
 
-        # Format status inline
+        # Accumulate adaptive mode stats
+        if "detection_attempts" in result:
+            total_detection_attempts += result["detection_attempts"]
+        if "total_frames" in result:
+            total_frames_all += result["total_frames"]
+
+        # Collect error details for failed videos
         ev = result.get("evaluation", {})
-        if result.get("skipped"):
-            status = "SKIPPED"
-        elif ev.get("skipped"):
-            status = "processed (no ground truth)"
-        else:
-            status = f"DETECTED={ev['detected_actions']} | GT={ev['gt_actions']} | {'SUCCESS' if ev['success'] else 'FAIL'}"
-        print(f"[{idx}/{len(video_files)}] [{video_path.name}] {status}")
+        if not result.get("skipped") and not ev.get("skipped") and not ev.get("success"):
+            error_details.append({
+                "video": result.get("video_stem", video_path.stem),
+                "detected": ev.get("detected_actions", 0),
+                "gt": ev.get("gt_actions", 0),
+            })
+
+        if verbose:
+            # Format status inline
+            if result.get("skipped"):
+                status = "SKIPPED"
+            elif ev.get("skipped"):
+                status = "processed (no ground truth)"
+            else:
+                status = f"DETECTED={ev['detected_actions']} | GT={ev['gt_actions']} | {'SUCCESS' if ev['success'] else 'FAIL'}"
+            print(f"[{idx}/{len(video_files)}] [{video_path.name}] {status}")
 
     stats = calculate_accuracy(results)
+    stats["error_details"] = error_details
     elapsed = time.time() - start_time
 
-    if stats["total_videos"]:
-        print(f"\nResults: {stats['success_count']}/{stats['total_videos']} videos correct")
-        print(f"Accuracy: {stats['accuracy']:.2f}%")
-    else:
-        print("\nNo videos with valid ground truth found")
-    print(f"Total time: {elapsed:.2f} seconds")
+    # Add adaptive mode cost stats
+    if total_frames_all > 0:
+        stats["detection_attempts"] = total_detection_attempts
+        stats["total_frames"] = total_frames_all
+        stats["inference_ratio"] = total_detection_attempts / total_frames_all
+
+    if verbose:
+        if stats["total_videos"]:
+            print(f"\nResults: {stats['success_count']}/{stats['total_videos']} videos correct")
+            print(f"Accuracy: {stats['accuracy']:.2f}%")
+        else:
+            print("\nNo videos with valid ground truth found")
+        print(f"Total time: {elapsed:.2f} seconds")
 
     return stats if return_details else stats["accuracy"]
