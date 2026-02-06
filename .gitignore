@@ -162,6 +162,7 @@ dmypy.json
 # Project artifacts
 plot/
 history_data/
+/*.png
 
 # Pyre type checker
 .pyre/
