@@ -46,8 +46,6 @@ The demo walks through the full flow:
 ```
 model_weights/               # Pretrained weights (haul.pt)
 video/selected_test_video/   # Demo clips grouped by action type (not uploaded)
-requirements/                # Dependency specs (base.txt)
-scripts/                     # Setup and utility scripts
 plot/                        # Output directory for detection plots (generated locally)
 ```
 
@@ -55,19 +53,8 @@ plot/                        # Output directory for detection plots (generated l
 
 ## 🛠️ Setup
 
-Run the one‑click setup script:
-
-```bash
-bash scripts/install_dependencies.sh
-```
-
-The script will:
-
-1. **Create** (or reuse) a Conda environment named **`haul_env`** with Python 3.12  
-2. **Detect** your OS (macOS MPS vs. Ubuntu CPU/GPU) and install the correct PyTorch build  
-3. **Install** all remaining packages from **`requirements/base.txt`**
-
-If you prefer a manual install, open the script and execute the commands step‑by‑step.
+Environment setup is currently managed manually during active development.
+Dependency lock files and one-click install scripts are intentionally omitted for now.
 
 ---
 
