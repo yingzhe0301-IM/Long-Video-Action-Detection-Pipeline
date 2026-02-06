@@ -9,9 +9,8 @@ from typing import List, Optional
 from haul.inference.inference_utils import clear_memory, get_device, load_yolo_model
 from haul.inference.pipeline_profiler import PipelineProfiler, SyncProfiler
 from haul.config.experiment_config import (
-    DEFAULT_DETECTION_MODE,
-    DEFAULT_EXPERIMENT_OPTIONS,
-    DEFAULT_ADAPTIVE_OPTIONS,
+    DEFAULT_CONFIG,
+    DEFAULT_ADAPTIVE_CONFIG,
     ExperimentConfig,
     AdaptiveSkipConfig,
 )
@@ -206,34 +205,34 @@ def parse_args() -> argparse.Namespace:
     mode.add_argument("--scan", action="store_true")
 
     parser.add_argument("--detection_mode", type=str, choices=["peak"])
-    parser.add_argument("--frame_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["frame_skip"])
-    parser.add_argument("--min_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["min_skip"])
-    parser.add_argument("--max_skip", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["max_skip"])
+    parser.add_argument("--frame_skip", type=int, default=DEFAULT_CONFIG.frame_skip)
+    parser.add_argument("--min_skip", type=int, default=DEFAULT_CONFIG.min_skip)
+    parser.add_argument("--max_skip", type=int, default=DEFAULT_CONFIG.max_skip)
     parser.add_argument("--custom_skips", type=str)
-    parser.add_argument("--video_root", type=str, default=DEFAULT_EXPERIMENT_OPTIONS["video_root"])
+    parser.add_argument("--video_root", type=str, default=DEFAULT_CONFIG.video_root)
     parser.add_argument("--model_weight", type=str)
-    parser.add_argument("--plot_folder", type=str, default=DEFAULT_EXPERIMENT_OPTIONS["plot_folder"])
-    parser.add_argument("--confidence", type=float, default=DEFAULT_EXPERIMENT_OPTIONS["confidence"])
-    parser.add_argument("--batch_size", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["batch_size"])
-    parser.add_argument("--window_size", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["window_size"])
+    parser.add_argument("--plot_folder", type=str, default=DEFAULT_CONFIG.plot_folder)
+    parser.add_argument("--confidence", type=float, default=DEFAULT_CONFIG.confidence)
+    parser.add_argument("--batch_size", type=int, default=DEFAULT_CONFIG.batch_size)
+    parser.add_argument("--window_size", type=int, default=DEFAULT_CONFIG.window_size)
     parser.add_argument("--save_frames", action="store_true")
     parser.add_argument("--display", action="store_true")
     parser.add_argument("--video", type=str)
     parser.add_argument("--no-prefetch", action="store_true", help="Disable async prefetching")
     parser.add_argument("--decode-all", action="store_true",
                         help="Decode every frame with cap.read() before skipping inference")
-    parser.add_argument("--prefetch_batches", type=int, default=DEFAULT_EXPERIMENT_OPTIONS["prefetch_batches"])
+    parser.add_argument("--prefetch_batches", type=int, default=DEFAULT_CONFIG.prefetch_batches)
     parser.add_argument("--print_prefetch_scan_summary", action="store_true",
                         help="Print per-skip prefetch summaries during scan")
 
     # Adaptive frame skip arguments
     parser.add_argument("--adaptive", action="store_true", help="Enable adaptive frame skip mode")
-    parser.add_argument("--initial_skip", type=int, default=DEFAULT_ADAPTIVE_OPTIONS["initial_skip"],
+    parser.add_argument("--initial_skip", type=int, default=DEFAULT_ADAPTIVE_CONFIG.initial_skip,
                         help="Initial frame skip for adaptive mode")
     parser.add_argument("--consecutive_negative_threshold", type=int,
-                        default=DEFAULT_ADAPTIVE_OPTIONS["consecutive_negative_threshold"],
+                        default=DEFAULT_ADAPTIVE_CONFIG.consecutive_negative_threshold,
                         help="Number of consecutive negatives before doubling skip")
-    parser.add_argument("--adaptive_max_skip", type=int, default=DEFAULT_ADAPTIVE_OPTIONS["max_skip"],
+    parser.add_argument("--adaptive_max_skip", type=int, default=DEFAULT_ADAPTIVE_CONFIG.max_skip,
                         help="Maximum frame skip for adaptive mode")
 
     # Profiler
@@ -269,7 +268,7 @@ def build_config(args: argparse.Namespace) -> ExperimentConfig:
 
     return ExperimentConfig(
         action_type=args.action_type,
-        detection_mode=args.detection_mode or DEFAULT_DETECTION_MODE,
+        detection_mode=args.detection_mode or DEFAULT_CONFIG.detection_mode,
         video_root=args.video_root,
         plot_folder=args.plot_folder,
         model_weight=model_weight,

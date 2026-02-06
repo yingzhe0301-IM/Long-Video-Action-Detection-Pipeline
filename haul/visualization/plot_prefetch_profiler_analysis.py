@@ -3,7 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
 
-RESULTS_DIR = Path('plot/results')
+RESULTS_DIRS = [
+    Path('haul/performance_resuts'),
+    Path('plot/results'),
+    Path('haul/performance_results'),
+]
 BATCH_SIZE = 64  # Update if you used a different batch size for the scan.
 
 DECODE_MODES = {
@@ -58,20 +62,40 @@ def _setup_linear_x(ax: plt.Axes) -> None:
     ax.grid(True, alpha=0.3, linestyle='--')
 
 
+def _find_crossing(x: pd.Series, y: pd.Series, target: float = 1.0) -> float | None:
+    for i in range(1, len(x)):
+        y0 = y.iloc[i - 1]
+        y1 = y.iloc[i]
+        if (y0 - target) == 0:
+            return float(x.iloc[i - 1])
+        if (y0 - target) * (y1 - target) <= 0 and y1 != y0:
+            t = (target - y0) / (y1 - y0)
+            return float(x.iloc[i - 1] + t * (x.iloc[i] - x.iloc[i - 1]))
+    return None
+
+
 def _save(fig: plt.Figure, name: str) -> None:
     fig.tight_layout()
     fig.savefig(name, dpi=150, bbox_inches='tight')
     print(f"Saved: {name}")
 
 
+def _resolve_csv(filename: str) -> Path:
+    for root in RESULTS_DIRS:
+        candidate = root / filename
+        if candidate.exists():
+            return candidate
+    return RESULTS_DIRS[0] / filename
+
+
 def _load_pair(decode_tag: str) -> dict[str, pd.DataFrame]:
-    prefetch_path = RESULTS_DIR / f"haul_scan_{decode_tag}_prefetch_profiler.csv"
-    no_prefetch_path = RESULTS_DIR / f"haul_scan_{decode_tag}_no_prefetch_profiler.csv"
+    prefetch_path = _resolve_csv(f"haul_scan_{decode_tag}_prefetch_profiler.csv")
+    no_prefetch_path = _resolve_csv(f"haul_scan_{decode_tag}_no_prefetch_profiler.csv")
 
     # Backward-compatible fallback for older decode-on-demand filenames.
     if decode_tag == "decode_on_demand":
-        legacy_prefetch = RESULTS_DIR / "haul_scan_prefetch_profiler.csv"
-        legacy_no_prefetch = RESULTS_DIR / "haul_scan_no_prefetch_profiler.csv"
+        legacy_prefetch = _resolve_csv("haul_scan_prefetch_profiler.csv")
+        legacy_no_prefetch = _resolve_csv("haul_scan_no_prefetch_profiler.csv")
         if not prefetch_path.exists() and legacy_prefetch.exists():
             prefetch_path = legacy_prefetch
         if not no_prefetch_path.exists() and legacy_no_prefetch.exists():
@@ -94,9 +118,11 @@ def _load_pair(decode_tag: str) -> dict[str, pd.DataFrame]:
 
     numeric_cols = [
         'frame_skip', 'runtime',
+        'prefetch_total_batches',
         'prefetch_avg_wait_ms', 'prefetch_avg_infer_ms', 'prefetch_avg_prepare_ms',
         'prefetch_wait_ratio', 'prefetch_steady_avg_wait_ms', 'prefetch_steady_avg_infer_ms',
         'prefetch_steady_avg_prepare_ms', 'prefetch_steady_wait_ratio',
+        'sync_total_prepare_ms',
         'sync_avg_prepare_ms', 'sync_avg_infer_ms', 'sync_wait_ratio',
         'sync_steady_avg_prepare_ms', 'sync_steady_avg_infer_ms', 'sync_steady_wait_ratio',
         'sync_ideal_serial_ms', 'sync_ideal_overlap_ms', 'sync_ideal_saved_ms',
@@ -130,13 +156,23 @@ def _load_pair(decode_tag: str) -> dict[str, pd.DataFrame]:
     merged['overlap_err_pct'] = (
         (merged['T_overlap_pred_s'] - merged['runtime_pf']) / merged['runtime_pf'] * 100.0
     )
+    merged['runtime_diff_s'] = merged['runtime_pf'] - merged['T_overlap_pred_s']
+    merged['runtime_diff_pct'] = (
+        merged['runtime_diff_s'] / merged['T_overlap_pred_s'].replace(0, np.nan) * 100.0
+    )
 
     merged['gpu_idle_s'] = merged['prefetch_steady_wait_ratio'] * merged['runtime_pf']
+    merged['prefetch_wait_s'] = (
+        merged['prefetch_avg_wait_ms'] * merged['prefetch_total_batches'] / 1000.0
+    )
+    merged['sync_wait_s'] = merged['sync_total_prepare_ms'] / 1000.0
+    merged['gpu_wait_saved_s'] = merged['sync_wait_s'] - merged['prefetch_wait_s']
 
     merged['prepare_per_infer_frame_ms'] = merged['prefetch_steady_avg_prepare_ms'] / BATCH_SIZE
     merged['prepare_per_advanced_frame_ms'] = (
         merged['prefetch_steady_avg_prepare_ms'] / (BATCH_SIZE * merged['frame_skip'])
     )
+    merged['infer_per_infer_frame_ms'] = merged['prefetch_steady_avg_infer_ms'] / BATCH_SIZE
 
     merged['tc_tg_ratio'] = (
         merged['prefetch_steady_avg_prepare_ms'] / merged['prefetch_steady_avg_infer_ms']
@@ -180,7 +216,7 @@ for tag, cfg in DECODE_MODES.items():
         color=cfg['colors']['no_prefetch'],
         linewidth=2,
         markersize=4,
-        label=f"{cfg['label']}, No Prefetch",
+        label=f"{cfg['label']}, Serial",
     )
     ax.plot(
         prefetch['frame_skip'],
@@ -189,7 +225,7 @@ for tag, cfg in DECODE_MODES.items():
         color=cfg['colors']['prefetch'],
         linewidth=2,
         markersize=4,
-        label=f"{cfg['label']}, Prefetch",
+        label=f"{cfg['label']}, Overlapped (Prefetch)",
     )
 
 ax.plot(
@@ -205,38 +241,16 @@ ax.plot(
 _setup_log_xy(ax)
 ax.set_xlabel('Frame Skip', fontsize=12)
 ax.set_ylabel('Runtime (% of skip=1)', fontsize=12)
-ax.set_title('Runtime Scaling: Decode Strategy × Prefetch (Mac Studio M4 Max)',
+ax.set_title('Runtime Scaling: Decode Strategy × Overlap (Mac Studio M4 Max)',
              fontsize=14, fontweight='bold')
 ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
 
 _save(fig, 'mac_studio_scaling_decode_strategies.png')
 
-# === Figure 2: Prefetch Speedup (decode_all vs decode_on_demand) ===
-fig, ax = plt.subplots(figsize=(10, 6))
-
-for tag, cfg in DECODE_MODES.items():
-    merged = pairs[tag]['merged']
-    ax.plot(
-        merged['frame_skip'],
-        merged['speedup'],
-        'o-',
-        color=cfg['colors']['base'],
-        linewidth=2,
-        markersize=4,
-        label=f"{cfg['label']}",
-    )
-
-_setup_linear_x(ax)
-ax.set_xlabel('Frame Skip', fontsize=12)
-ax.set_ylabel('Speedup (no/prefetch)', fontsize=12)
-ax.set_title('Prefetch Speedup by Decode Strategy (Mac Studio M4 Max)',
-             fontsize=14, fontweight='bold')
-ax.legend(loc='upper right', fontsize=10, framealpha=0.9)
-
-_save(fig, 'mac_studio_prefetch_speedup_by_decode.png')
-
-# === Figure 3: Observed vs Ideal Saved Time (two panels) ===
+# === Figure 2: Observed vs Ideal Saved Time (two panels) ===
 fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
+legend_handles: list = []
+legend_labels: list = []
 
 for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
     merged = pairs[tag]['merged']
@@ -270,35 +284,15 @@ fig.subplots_adjust(top=0.88)
 
 _save(fig, 'mac_studio_prefetch_saved_vs_ideal_by_decode.png')
 
-# === Figure 4: Overlap Efficiency ===
+# === Figure 3: Tc / Tg Ratio (prefetch steady) ===
 fig, ax = plt.subplots(figsize=(10, 6))
 
 for tag, cfg in DECODE_MODES.items():
     merged = pairs[tag]['merged']
-    ax.plot(
-        merged['frame_skip'],
-        merged['saved_ratio'],
-        'o-',
-        color=cfg['colors']['base'],
-        linewidth=2,
-        markersize=4,
-        label=f"{cfg['label']}",
-    )
-
-ax.axhline(1.0, color='#2ecc71', linestyle='--', linewidth=2, alpha=0.7, label='Ideal = 1.0')
-_setup_log_x(ax)
-ax.set_xlabel('Frame Skip', fontsize=12)
-ax.set_ylabel('Observed / Ideal Saved', fontsize=12)
-ax.set_title('Overlap Efficiency (Mac Studio M4 Max)', fontsize=14, fontweight='bold')
-ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
-
-_save(fig, 'mac_studio_prefetch_overlap_efficiency.png')
-
-# === Figure 5: Tc / Tg Ratio (prefetch steady) ===
-fig, ax = plt.subplots(figsize=(10, 6))
-
-for tag, cfg in DECODE_MODES.items():
-    merged = pairs[tag]['merged']
+    crossing = _find_crossing(merged['frame_skip'], merged['tc_tg_ratio'])
+    label = cfg['label']
+    if crossing is not None:
+        label = f"{cfg['label']} (CPU>=GPU @ {crossing:.1f})"
     ax.plot(
         merged['frame_skip'],
         merged['tc_tg_ratio'],
@@ -306,19 +300,19 @@ for tag, cfg in DECODE_MODES.items():
         color=cfg['colors']['base'],
         linewidth=2,
         markersize=4,
-        label=f"{cfg['label']}",
+        label=label,
     )
 
 ax.axhline(1.0, color='#2ecc71', linestyle='--', linewidth=2, alpha=0.7, label='CPU = GPU')
 _setup_log_x(ax)
 ax.set_xlabel('Frame Skip', fontsize=12)
 ax.set_ylabel('Tc / Tg', fontsize=12)
-ax.set_title('CPU vs GPU Bottleneck (Prefetch Steady)', fontsize=14, fontweight='bold')
+ax.set_title('CPU vs GPU Bottleneck (Overlap Steady)', fontsize=14, fontweight='bold')
 ax.legend(loc='upper left', fontsize=9, framealpha=0.9)
 
 _save(fig, 'mac_studio_prefetch_tc_tg_ratio.png')
 
-# === Figure 6: GPU Idle vs Wait Ratio (two panels) ===
+# === Figure 4: GPU Idle vs Wait Ratio (two panels) ===
 fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
 legend_handles: list = []
 legend_labels: list = []
@@ -358,47 +352,56 @@ for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
 
 fig.legend(legend_handles, legend_labels, loc='upper center',
            bbox_to_anchor=(0.5, 0.0), ncol=2, fontsize=10)
-fig.suptitle('Prefetch GPU Idle vs Wait Ratio (Mac Studio M4 Max)',
+fig.suptitle('Overlap GPU Idle vs Wait Ratio (Mac Studio M4 Max)',
              fontsize=14, fontweight='bold')
 fig.subplots_adjust(top=0.88, bottom=0.12)
 
 _save(fig, 'mac_studio_prefetch_idle_vs_wait_by_decode.png')
 
-# === Figure 7: Prepare Cost per Frame (two panels) ===
-fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
+# === Figure 5: Prepare/Infer Cost per Frame (two panels) ===
+fig, axes = plt.subplots(figsize=(16, 6), ncols=2, sharey=True)
+frame_cost_values: list[float] = []
 
 for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
     merged = pairs[tag]['merged']
+    frame_cost_values.extend(merged['prepare_per_infer_frame_ms'].dropna().tolist())
+    # Only plot per inferred-frame metrics for clarity
+    frame_cost_values.extend(merged['infer_per_infer_frame_ms'].dropna().tolist())
     ax.plot(
         merged['frame_skip'],
         merged['prepare_per_infer_frame_ms'],
         'o-',
-        color=cfg['colors']['base'],
+        color='#e67e22',
         linewidth=2,
         markersize=4,
         label='Prepare per inferred frame',
     )
     ax.plot(
         merged['frame_skip'],
-        merged['prepare_per_advanced_frame_ms'],
+        merged['infer_per_infer_frame_ms'],
         's-',
-        color='#e67e22',
+        color='#3498db',
         linewidth=2,
         markersize=4,
-        label='Prepare per advanced frame',
+        label='Infer per inferred frame',
     )
     _setup_log_x(ax)
     ax.set_xlabel('Frame Skip', fontsize=12)
-    ax.set_ylabel('Prepare Cost (ms)', fontsize=12)
+    ax.set_ylabel('Cost per Frame (ms)', fontsize=12)
     ax.set_title(cfg['label'], fontsize=13, fontweight='bold')
     ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
 
-fig.suptitle('Prepare Cost per Frame (Prefetch Steady)', fontsize=14, fontweight='bold')
+if frame_cost_values:
+    ymin = max(0.0, min(frame_cost_values) * 0.9)
+    ymax = max(frame_cost_values) * 1.1
+    axes[0].set_ylim(ymin, ymax)
+
+fig.suptitle('Prepare/Infer Cost per Frame (Overlap Steady)', fontsize=14, fontweight='bold')
 fig.subplots_adjust(top=0.88)
 
-_save(fig, 'mac_studio_prepare_cost_per_frame_by_decode.png')
+_save(fig, 'mac_studio_prepare_infer_batch_and_frame_by_decode.png')
 
-# === Figure 8: Prefetch steady vs overall deltas (two panels) ===
+# === Figure 6: Overlap steady vs overall deltas (two panels) ===
 fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
 
 for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
@@ -420,8 +423,148 @@ for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
     ax.set_title(cfg['label'], fontsize=13, fontweight='bold')
     ax.legend(loc='upper right', fontsize=9, framealpha=0.9)
 
-fig.suptitle('Prefetch Steady vs Overall Deltas (Mac Studio M4 Max)',
+fig.suptitle('Overlap Steady vs Overall Deltas (Mac Studio M4 Max)',
              fontsize=14, fontweight='bold')
 fig.subplots_adjust(top=0.88)
 
 _save(fig, 'mac_studio_prefetch_steady_deltas_by_decode.png')
+
+# === Figure 7: Ideal vs Observed Gap (Absolute + Relative) ===
+fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
+legend_handles: list = []
+legend_labels: list = []
+
+for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
+    merged = pairs[tag]['merged']
+    gap_s = merged['T_saved_pred_s'] - merged['T_saved_obs_s']
+    rel_gap = gap_s / merged['T_saved_pred_s'].replace(0, np.nan)
+
+    bar_color = cfg['colors']['base']
+    ax.bar(
+        merged['frame_skip'],
+        gap_s,
+        color=bar_color,
+        alpha=0.5,
+        label='Ideal - Observed (gap)',
+    )
+    ax.axhline(0, color='#666666', linewidth=1, alpha=0.6)
+    ax.set_xlabel('Frame Skip', fontsize=12)
+    ax.set_ylabel('Gap (seconds)', fontsize=12)
+    _setup_linear_x(ax)
+
+    ax2 = ax.twinx()
+    ax2.plot(
+        merged['frame_skip'],
+        rel_gap * 100.0,
+        'o-',
+        color='#e67e22',
+        linewidth=2,
+        markersize=4,
+        label='Gap / Ideal (%)',
+    )
+    ax2.axhline(0, color='#e67e22', linestyle='--', linewidth=1, alpha=0.6)
+    ax2.set_ylabel('Relative Gap (%)', fontsize=12, color='#e67e22')
+    ax2.tick_params(axis='y', labelcolor='#e67e22')
+
+    ax.set_title(cfg['label'], fontsize=13, fontweight='bold')
+
+    if ax is axes[0]:
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        legend_handles = lines1 + lines2
+        legend_labels = labels1 + labels2
+
+fig.legend(legend_handles, legend_labels, loc='upper center',
+           bbox_to_anchor=(0.5, 0.0), ncol=2, fontsize=10)
+fig.suptitle('Saved Time Diff: Observed vs Predicted (Mac Studio M4 Max)',
+             fontsize=14, fontweight='bold')
+fig.subplots_adjust(top=0.88, bottom=0.12)
+
+_save(fig, 'mac_studio_prefetch_gap_vs_relative_error.png')
+
+# === Figure 8: Runtime Diff (Observed vs Formula) ===
+fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
+legend_handles = []
+legend_labels = []
+
+for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
+    merged = pairs[tag]['merged']
+    bar_color = cfg['colors']['base']
+    ax.bar(
+        merged['frame_skip'],
+        merged['runtime_diff_s'],
+        color=bar_color,
+        alpha=0.5,
+        label='Observed - Predicted (s)',
+    )
+    ax.axhline(0.0, color='#666666', linewidth=1, alpha=0.6)
+    ax.set_xlabel('Frame Skip', fontsize=12)
+    ax.set_ylabel('Diff (s)', fontsize=12)
+    _setup_linear_x(ax)
+
+    ax2 = ax.twinx()
+    ax2.plot(
+        merged['frame_skip'],
+        merged['runtime_diff_pct'],
+        'o-',
+        color='#e67e22',
+        linewidth=2,
+        markersize=4,
+        label='Diff (%)',
+    )
+    ax2.axhline(0.0, color='#e67e22', linestyle='--', linewidth=1, alpha=0.6)
+    ax2.set_ylabel('Diff (%)', fontsize=12, color='#e67e22')
+    ax2.tick_params(axis='y', labelcolor='#e67e22')
+
+    ax.set_title(cfg['label'], fontsize=13, fontweight='bold')
+
+    if not legend_handles:
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        legend_handles = lines1 + lines2
+        legend_labels = labels1 + labels2
+
+fig.legend(legend_handles, legend_labels, loc='upper center',
+           bbox_to_anchor=(0.5, 0.0), ncol=2, fontsize=10)
+fig.suptitle('Runtime Diff: Observed vs Predicted',
+             fontsize=14, fontweight='bold')
+fig.subplots_adjust(top=0.88, bottom=0.12)
+
+_save(fig, 'mac_studio_runtime_vs_formula_by_decode.png')
+
+# === Figure 9: GPU Wait (Serial vs Overlapped) ===
+fig, axes = plt.subplots(figsize=(16, 6), ncols=2)
+
+for ax, (tag, cfg) in zip(axes, DECODE_MODES.items()):
+    merged = pairs[tag]['merged']
+    ax.plot(
+        merged['frame_skip'],
+        merged['sync_wait_s'],
+        'o-',
+        color='#7f8c8d',
+        linewidth=2,
+        markersize=4,
+        label='Serial',
+    )
+    ax.plot(
+        merged['frame_skip'],
+        merged['prefetch_wait_s'],
+        's-',
+        color=cfg['colors']['base'],
+        linewidth=2,
+        markersize=4,
+        label='Overlapped (Prefetch)',
+    )
+    ax.axhline(0.0, color='#666666', linewidth=1, alpha=0.6)
+    _setup_linear_x(ax)
+    ax.set_xlabel('Frame Skip', fontsize=12)
+    ax.set_ylabel('GPU Wait s', fontsize=12)
+
+    ax.set_title(cfg['label'], fontsize=13, fontweight='bold')
+    ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
+
+fig.suptitle('GPU Wait: Serial vs Overlapped',
+             fontsize=14, fontweight='bold')
+fig.subplots_adjust(top=0.88)
+
+_save(fig, 'mac_studio_gpu_wait_saved_by_decode.png')
