@@ -10,7 +10,7 @@ Haul is a lightweight, reproducible **long-video action detection pipeline** for
 
 ```bash
 # One-click setup (creates haul_env conda environment with Python 3.12)
-bash install_dependencies.sh
+bash scripts/install_dependencies.sh
 
 # Single video detection demo
 python experiments.py --action_type haul --single --frame_skip 5 \
